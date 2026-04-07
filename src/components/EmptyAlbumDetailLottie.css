@@ -1,0 +1,57 @@
+/** Empty album detail — Lottie (Album Zero), compact */
+
+.eadl-root {
+  width: 100%;
+  max-width: min(176px, 48vw);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.eadl-lottie {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  min-height: 96px;
+  max-height: 176px;
+  height: auto;
+  display: block;
+}
+
+/* Matches T.album.emptyBg / T.cloud.dark (Figma tokens) */
+.eadl-fallback {
+  width: 100%;
+  max-width: min(176px, 48vw);
+  aspect-ratio: 1 / 1;
+  min-height: 96px;
+  max-height: 176px;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #e8edf1 0%, #f0f4f8 100%);
+}
+
+.eadl-fallback--loading {
+  opacity: 0.75;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .eadl-fallback--loading {
+    animation: eadl-pulse 1.2s cubic-bezier(0.33, 1, 0.68, 1) infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eadl-fallback--loading {
+    animation: none;
+  }
+}
+
+@keyframes eadl-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
