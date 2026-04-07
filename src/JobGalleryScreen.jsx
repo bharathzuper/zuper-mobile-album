@@ -1041,7 +1041,6 @@ export function JobGalleryScreen() {
               <ShareAlbumBody
                 albumName={albums.find((a) => a.id === shareAlbumId)?.name ?? 'Album'}
                 zuperConnect={ZUPER_CONNECT}
-                onClose={() => setShareAlbumId(null)}
                 onSubmit={() => {
                   showToast('Album shared.');
                   setShareAlbumId(null);
@@ -1748,94 +1747,251 @@ export function JobGalleryScreen() {
   );
 }
 
-function ShareAlbumBody({ albumName, zuperConnect, onClose, onSubmit }) {
+function ShareAlbumBody({ albumName, zuperConnect, onSubmit }) {
   const font = TYPE.tabLabel.fontFamily;
+  const easeOut = 'cubic-bezier(0.33, 1, 0.68, 1)';
   const [method, setMethod] = useState('email');
+  const effectiveMethod = zuperConnect ? method : 'email';
+  const inputBase = {
+    width: '100%',
+    padding: '12px 14px',
+    borderRadius: 10,
+    border: `1px solid ${T.cloud.dark}`,
+    fontFamily: font,
+    fontSize: 15,
+    color: T.ink.normal,
+    backgroundColor: T.white,
+    boxSizing: 'border-box',
+  };
+
   return (
-    <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', backgroundColor: T.white, overflowY: 'auto' }} className="zuper-hide-scrollbar">
-      <div style={{ padding: '16px', flex: 1 }}>
-        <p style={{ fontSize: 13, color: T.ink.light, margin: '0 0 8px 0', lineHeight: 1.45 }}>
-          Recipients open a view-only link to “{albumName}” in the browser. They can browse photos; they can’t edit this album.
-        </p>
-        <p style={{ fontSize: 12, color: T.ink.light, margin: '0 0 16px 0', lineHeight: 1.45 }}>
-          Need the URL on your clipboard only? Use <strong style={{ fontWeight: 600, color: T.ink.normal }}>Copy link</strong> from the album menu — set expiry below when you send from here.
-        </p>
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-          <button
-            type="button"
-            onClick={() => setMethod('email')}
+    <>
+      <style>{`
+        .zuper-share-input:focus-visible,
+        .zuper-share-select:focus-visible,
+        .zuper-share-textarea:focus-visible,
+        .zuper-share-submit:focus-visible {
+          outline: 2px solid ${T.product.normal};
+          outline-offset: 2px;
+        }
+      `}</style>
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          backgroundColor: T.white,
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          className="zuper-hide-scrollbar"
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            WebkitOverflowScrolling: 'touch',
+          }}
+        >
+        <div style={{ padding: '20px 20px 24px', maxWidth: 480, margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
+          <p
             style={{
-              flex: 1,
-              padding: '10px',
-              borderRadius: 10,
-              border: `1px solid ${method === 'email' ? T.product.normal : T.cloud.dark}`,
-              background: method === 'email' ? 'rgba(228,74,25,0.08)' : T.white,
-              fontWeight: 600,
-              cursor: 'pointer',
-              fontFamily: font,
+              ...TYPE.heading6,
+              fontSize: 17,
+              margin: '0 0 6px 0',
+              color: T.ink.normal,
+              letterSpacing: -0.02,
             }}
           >
-            Email
-          </button>
+            {albumName}
+          </p>
+          <p style={{ fontSize: 13, color: T.ink.light, margin: '0 0 20px 0', lineHeight: 1.4 }}>
+            View-only link · Recipients can’t edit this album.
+          </p>
+
           {zuperConnect ? (
+            <div
+              className="zuper-segment"
+              style={{
+                display: 'flex',
+                flexDirection: 'row',
+                backgroundColor: T.cloud.dark,
+                borderRadius: 10,
+                padding: 4,
+                gap: 4,
+                marginBottom: 12,
+                border: 'none',
+                outline: 'none',
+              }}
+            >
+              <button
+                type="button"
+                className="zuper-segment-pill"
+                onClick={() => setMethod('email')}
+                style={{
+                  flex: 1,
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '8px 12px',
+                  fontFamily: font,
+                  fontSize: 14,
+                  fontWeight: method === 'email' ? 600 : 500,
+                  color: method === 'email' ? T.ink.normal : T.ink.light,
+                  backgroundColor: method === 'email' ? T.white : 'transparent',
+                  cursor: 'pointer',
+                  boxShadow: method === 'email' ? '0 1px 3px rgba(37, 42, 49, 0.08)' : 'none',
+                }}
+              >
+                Email
+              </button>
+              <button
+                type="button"
+                className="zuper-segment-pill"
+                onClick={() => setMethod('text')}
+                style={{
+                  flex: 1,
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '8px 12px',
+                  fontFamily: font,
+                  fontSize: 14,
+                  fontWeight: method === 'text' ? 600 : 500,
+                  color: method === 'text' ? T.ink.normal : T.ink.light,
+                  backgroundColor: method === 'text' ? T.white : 'transparent',
+                  cursor: 'pointer',
+                  boxShadow: method === 'text' ? '0 1px 3px rgba(37, 42, 49, 0.08)' : 'none',
+                }}
+              >
+                Text
+              </button>
+            </div>
+          ) : null}
+
+          {effectiveMethod === 'email' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label htmlFor="share-email-to" style={{ fontSize: 12, fontWeight: 600, color: T.ink.light, display: 'block', marginBottom: 6 }}>
+                  To
+                </label>
+                <input
+                  id="share-email-to"
+                  className="zuper-share-input"
+                  type="email"
+                  autoComplete="email"
+                  placeholder="name@email.com"
+                  defaultValue="homeowner@example.com"
+                  style={inputBase}
+                />
+              </div>
+              <div>
+                <label htmlFor="share-email-subject" style={{ fontSize: 12, fontWeight: 600, color: T.ink.light, display: 'block', marginBottom: 6 }}>
+                  Subject
+                </label>
+                <input id="share-email-subject" className="zuper-share-input" type="text" defaultValue={`Photos: ${albumName}`} style={inputBase} />
+              </div>
+              <div>
+                <label htmlFor="share-email-body" style={{ fontSize: 12, fontWeight: 600, color: T.ink.light, display: 'block', marginBottom: 6 }}>
+                  Message
+                </label>
+                <textarea
+                  id="share-email-body"
+                  className="zuper-share-textarea"
+                  defaultValue="Hi — here’s a link to view the album."
+                  rows={4}
+                  style={{ ...inputBase, resize: 'none', minHeight: 100, lineHeight: 1.45 }}
+                />
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label htmlFor="share-text-phone" style={{ fontSize: 12, fontWeight: 600, color: T.ink.light, display: 'block', marginBottom: 6 }}>
+                  Mobile number
+                </label>
+                <input
+                  id="share-text-phone"
+                  className="zuper-share-input"
+                  type="tel"
+                  autoComplete="tel"
+                  placeholder="(555) 555-0100"
+                  defaultValue=""
+                  style={inputBase}
+                />
+              </div>
+              <div>
+                <label htmlFor="share-text-body" style={{ fontSize: 12, fontWeight: 600, color: T.ink.light, display: 'block', marginBottom: 6 }}>
+                  Message <span style={{ fontWeight: 500, color: T.ink.light }}>(optional)</span>
+                </label>
+                <textarea
+                  id="share-text-body"
+                  className="zuper-share-textarea"
+                  defaultValue={`View photos: ${albumName}`}
+                  rows={3}
+                  style={{ ...inputBase, resize: 'none', minHeight: 76, lineHeight: 1.45 }}
+                />
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginTop: 14 }}>
+            <label htmlFor="share-expiry" style={{ fontSize: 12, fontWeight: 600, color: T.ink.light, display: 'block', marginBottom: 6 }}>
+              Link expires
+            </label>
+            <select
+              id="share-expiry"
+              className="zuper-share-select"
+              style={{ ...inputBase, cursor: 'pointer', padding: '12px 40px 12px 14px' }}
+            >
+              <option>7 days</option>
+              <option>30 days</option>
+              <option>90 days</option>
+              <option>Never</option>
+            </select>
+          </div>
+        </div>
+        </div>
+
+        <div
+          style={{
+            flexShrink: 0,
+            width: '100%',
+            borderTop: `1px solid ${T.cloud.dark}`,
+            backgroundColor: T.white,
+            paddingTop: 12,
+            paddingLeft: 20,
+            paddingRight: 20,
+            paddingBottom: 'max(16px, env(safe-area-inset-bottom, 0px))',
+            boxShadow: '0 -4px 20px rgba(37, 42, 49, 0.06)',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div style={{ maxWidth: 480, margin: '0 auto', width: '100%' }}>
             <button
               type="button"
-              onClick={() => setMethod('sms')}
+              className="zuper-share-submit"
+              onClick={onSubmit}
               style={{
-                flex: 1,
-                padding: '10px',
-                borderRadius: 10,
-                border: `1px solid ${method === 'sms' ? T.product.normal : T.cloud.dark}`,
-                background: method === 'sms' ? 'rgba(228,74,25,0.08)' : T.white,
+                width: '100%',
+                minHeight: 48,
+                padding: '14px 16px',
+                borderRadius: 12,
+                border: 'none',
+                background: T.product.normal,
+                color: T.white,
+                fontSize: 16,
                 fontWeight: 600,
                 cursor: 'pointer',
                 fontFamily: font,
+                transition: `opacity 0.18s ${easeOut}, transform 0.18s ${easeOut}`,
               }}
             >
-              SMS
+              {effectiveMethod === 'email' ? 'Send email' : 'Send text'}
             </button>
-          ) : null}
+          </div>
         </div>
-        <label style={{ fontSize: 12, color: T.ink.light, display: 'block', marginBottom: 4 }}>To</label>
-        <input
-          defaultValue="homeowner@example.com"
-          style={{ width: '100%', padding: 12, borderRadius: 10, border: `1px solid ${T.cloud.dark}`, marginBottom: 12, fontFamily: font, fontSize: 15 }}
-        />
-        <label style={{ fontSize: 12, color: T.ink.light, display: 'block', marginBottom: 4 }}>Subject</label>
-        <input defaultValue={`Photos: ${albumName}`} style={{ width: '100%', padding: 12, borderRadius: 10, border: `1px solid ${T.cloud.dark}`, marginBottom: 12, fontFamily: font, fontSize: 15 }} />
-        <label style={{ fontSize: 12, color: T.ink.light, display: 'block', marginBottom: 4 }}>Message</label>
-        <textarea
-          defaultValue="Hi — here is a link to view the album."
-          rows={4}
-          style={{ width: '100%', padding: 12, borderRadius: 10, border: `1px solid ${T.cloud.dark}`, marginBottom: 12, fontFamily: font, fontSize: 15, resize: 'none' }}
-        />
-        <label style={{ fontSize: 12, color: T.ink.light, display: 'block', marginBottom: 4 }}>Link expires</label>
-        <select style={{ width: '100%', padding: 12, borderRadius: 10, border: `1px solid ${T.cloud.dark}`, marginBottom: 20, fontFamily: font, fontSize: 15 }}>
-          <option>7 days</option>
-          <option>30 days</option>
-          <option>90 days</option>
-          <option>Never</option>
-        </select>
-        <button
-          type="button"
-          onClick={onSubmit}
-          style={{
-            width: '100%',
-            padding: '14px',
-            borderRadius: 12,
-            border: 'none',
-            background: T.product.normal,
-            color: T.white,
-            fontSize: 16,
-            fontWeight: 600,
-            cursor: 'pointer',
-            fontFamily: font,
-          }}
-        >
-          Share Album
-        </button>
       </div>
-    </div>
+    </>
   );
 }
 
