@@ -2,8 +2,8 @@ import React, { useRef, useEffect, useState, useMemo, useCallback } from 'react'
 import { A } from './assets/figma-mcp.js';
 import { T, TYPE } from './tokens/figma.js';
 import { GALLERY_ITEMS, createInitialAlbums, itemById } from './data/albumsMock.js';
-import { AlbumFolderGrid } from './components/AlbumFolderGrid.jsx';
 import { EmptyAlbumDetailLottie } from './components/EmptyAlbumDetailLottie.jsx';
+import { GlassyFolderIcon } from './components/GlassyFolderIcon.jsx';
 
 function albumHasPhotos(albumId, albums) {
   const st = albums.find((a) => a.id === albumId);
@@ -18,11 +18,13 @@ const ALBUM_GRID_DENSITY = {
 };
 
 /**
- * Never use more columns than photos (avoids empty trailing cells). Single photo stays one column, centered.
+ * Album detail grid: at least 3 columns so one photo matches “one cell” width (same as 3-up row), not full width.
+ * Extra row slots stay empty. For 2+ photos, cap by density and photo count, with a floor of 3 columns.
  */
 function albumDetailEffectiveColumns(photoCount, colsPerRow) {
-  if (photoCount <= 1) return 1;
-  return Math.min(colsPerRow, photoCount);
+  if (photoCount <= 0) return 1;
+  if (photoCount === 1) return 3;
+  return Math.max(3, Math.min(colsPerRow, photoCount));
 }
 
 /** Square grid icon: dim×dim cells (2 = 2×2 … 4 = 4×4) for density menu. */
@@ -207,15 +209,13 @@ function GalleryTile({ src, tag, video, selected, selectionMode, onSelectInMode,
 
 export function JobGalleryScreen() {
   const tabScrollRef = useRef(null);
-  const [segment, setSegment] = useState('all');
   const [albums, setAlbums] = useState(() => createInitialAlbums());
   const [albumDetailId, setAlbumDetailId] = useState(null);
   const [shareAlbumId, setShareAlbumId] = useState(null);
   const [manageAlbumId, setManageAlbumId] = useState(null);
   const [albumMenuId, setAlbumMenuId] = useState(null);
   const [albumDetailTitleMenuOpen, setAlbumDetailTitleMenuOpen] = useState(false);
-  const [albumGridMenuOpen, setAlbumGridMenuOpen] = useState(false);
-  const [albumGridDensity, setAlbumGridDensity] = useState('medium');
+  const [albumGridDensity] = useState('medium');
   const titleBarAlbumActionsRef = useRef(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selecting, setSelecting] = useState(false);
@@ -224,6 +224,9 @@ export function JobGalleryScreen() {
   const [role, setRole] = useState('field');
   /** Device-uploaded images (blob URLs) merged into gallery + albums */
   const [extraGalleryItems, setExtraGalleryItems] = useState([]);
+  const [albumSelecting, setAlbumSelecting] = useState(false);
+  const [albumSelectedIds, setAlbumSelectedIds] = useState(() => new Set());
+  const [albumRemoveConfirmOpen, setAlbumRemoveConfirmOpen] = useState(false);
   const [jobGalleryPickerOpen, setJobGalleryPickerOpen] = useState(false);
   const [jobGalleryPickerAlbumId, setJobGalleryPickerAlbumId] = useState(null);
   const [jobGalleryPickerSelected, setJobGalleryPickerSelected] = useState(() => new Set());
@@ -306,6 +309,39 @@ export function JobGalleryScreen() {
     setSelecting(false);
     setSelectedIds(new Set());
   }, []);
+
+  const toggleAlbumSelect = useCallback((id) => {
+    setAlbumSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const enterAlbumSelectionWith = useCallback((id) => {
+    setAlbumSelecting(true);
+    setAlbumSelectedIds(new Set([id]));
+  }, []);
+
+  const exitAlbumSelection = useCallback(() => {
+    setAlbumSelecting(false);
+    setAlbumSelectedIds(new Set());
+  }, []);
+
+  const confirmRemoveFromAlbum = useCallback(() => {
+    if (!albumDetailId || albumSelectedIds.size === 0) return;
+    const count = albumSelectedIds.size;
+    setAlbums((prev) =>
+      prev.map((a) => {
+        if (a.id !== albumDetailId) return a;
+        return { ...a, photoIds: a.photoIds.filter((pid) => !albumSelectedIds.has(pid)) };
+      })
+    );
+    setAlbumRemoveConfirmOpen(false);
+    exitAlbumSelection();
+    showToast(`Removed ${count} photo${count === 1 ? '' : 's'} from album.`);
+  }, [albumDetailId, albumSelectedIds, exitAlbumSelection, showToast]);
 
   useEffect(() => {
     extraGalleryForCleanupRef.current = extraGalleryItems;
@@ -414,6 +450,10 @@ export function JobGalleryScreen() {
     if (selecting && selectedIds.size === 0) setSelecting(false);
   }, [selecting, selectedIds]);
 
+  useEffect(() => {
+    if (albumSelecting && albumSelectedIds.size === 0) setAlbumSelecting(false);
+  }, [albumSelecting, albumSelectedIds]);
+
   const addToAlbum = useCallback(
     (albumId) => {
       const ids = [...selectedIds];
@@ -503,6 +543,10 @@ export function JobGalleryScreen() {
       return;
     }
     if (albumDetailId) {
+      if (albumSelecting) {
+        exitAlbumSelection();
+        return;
+      }
       setAlbumDetailId(null);
       return;
     }
@@ -527,44 +571,39 @@ export function JobGalleryScreen() {
 
   useEffect(() => {
     setAlbumDetailTitleMenuOpen(false);
-    setAlbumGridMenuOpen(false);
   }, [albumDetailId]);
 
   useEffect(() => {
     setAlbumDetailTitleMenuOpen(false);
-    setAlbumGridMenuOpen(false);
   }, [shareAlbumId]);
 
   useEffect(() => {
     if (!showTitleBarMore) {
       setAlbumDetailTitleMenuOpen(false);
-      setAlbumGridMenuOpen(false);
     }
   }, [showTitleBarMore]);
 
   useEffect(() => {
-    if (!albumDetailTitleMenuOpen && !albumGridMenuOpen) return undefined;
+    if (!albumDetailTitleMenuOpen) return undefined;
     const onKey = (e) => {
       if (e.key === 'Escape') {
         setAlbumDetailTitleMenuOpen(false);
-        setAlbumGridMenuOpen(false);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [albumDetailTitleMenuOpen, albumGridMenuOpen]);
+  }, [albumDetailTitleMenuOpen]);
 
   useEffect(() => {
-    if (!albumDetailTitleMenuOpen && !albumGridMenuOpen) return undefined;
+    if (!albumDetailTitleMenuOpen) return undefined;
     const onDown = (e) => {
       if (titleBarAlbumActionsRef.current && !titleBarAlbumActionsRef.current.contains(e.target)) {
         setAlbumDetailTitleMenuOpen(false);
-        setAlbumGridMenuOpen(false);
       }
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
-  }, [albumDetailTitleMenuOpen, albumGridMenuOpen]);
+  }, [albumDetailTitleMenuOpen]);
 
   return (
     <>
@@ -613,6 +652,15 @@ export function JobGalleryScreen() {
         }
         @media (prefers-reduced-motion: reduce) {
           .zuper-segment-pill { transition: none; }
+        }
+        .zuper-folder-btn:focus-visible {
+          outline: 2px solid ${T.product.normal};
+          outline-offset: 2px;
+          border-radius: 6px;
+        }
+        @media (prefers-reduced-motion: no-preference) {
+          .zuper-folder-btn { transition: transform 0.18s cubic-bezier(0.33, 1, 0.68, 1); }
+          .zuper-folder-btn:active { transform: scale(0.95); }
         }
         .zuper-empty-album {
           display: flex;
@@ -676,12 +724,13 @@ export function JobGalleryScreen() {
         }
         .zuper-album-detail-toolbar {
           display: flex;
-          align-items: center;
+          flex-direction: row;
+          align-items: baseline;
           justify-content: flex-start;
-          gap: 12px;
-          margin-bottom: 12px;
+          gap: 8px;
           flex-wrap: wrap;
-          min-height: 44px;
+          margin-bottom: 10px;
+          min-height: 0;
         }
         .zuper-album-detail-grid {
           display: grid;
@@ -913,111 +962,104 @@ export function JobGalleryScreen() {
                     style={{
                       display: 'flex',
                       flexDirection: 'row',
-                      alignItems: 'flex-start',
+                      alignItems: 'center',
                       flexShrink: 0,
+                      gap: 0,
                       visibility: showTitleBarMore ? 'visible' : 'hidden',
                       pointerEvents: showTitleBarMore ? 'auto' : 'none',
                     }}
                   >
-                    <div style={{ position: 'relative', width: 44, flexShrink: 0 }}>
-                      <button
-                        type="button"
-                        aria-label="Photo grid size"
-                        aria-haspopup="menu"
-                        aria-expanded={albumGridMenuOpen}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setAlbumDetailTitleMenuOpen(false);
-                          setAlbumGridMenuOpen((o) => !o);
-                        }}
-                        style={{
-                          border: 'none',
-                          background: 'none',
-                          cursor: 'pointer',
-                          padding: 8,
-                          width: 44,
-                          height: 44,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: T.ink.normal,
-                        }}
-                      >
-                        <IconGridDensity dim={3} size={22} />
-                      </button>
-                      {albumGridMenuOpen && showTitleBarMore ? (
-                        <div className="zuper-grid-density-menu" role="menu" aria-label="Grid size">
-                          {['large', 'medium', 'small'].map((key) => (
-                            <button
-                              key={key}
-                              type="button"
-                              role="menuitemradio"
-                              aria-checked={albumGridDensity === key}
-                              className="zuper-grid-density-row"
-                              onClick={() => {
-                                setAlbumGridDensity(key);
-                                setAlbumGridMenuOpen(false);
-                              }}
-                            >
-                              <span className="zuper-grid-density-check" aria-hidden>
-                                {albumGridDensity === key ? '✓' : '\u00A0'}
-                              </span>
-                              <span className="zuper-grid-density-label">{ALBUM_GRID_DENSITY[key].label}</span>
-                              <span className="zuper-grid-density-icon" aria-hidden>
-                                <IconGridDensity
-                                  dim={key === 'large' ? 2 : key === 'medium' ? 3 : 4}
-                                  size={20}
-                                />
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-                    </div>
-                    <div style={{ position: 'relative', width: 44, flexShrink: 0 }}>
-                      <button
-                        type="button"
-                        aria-label="Album actions"
-                        aria-haspopup="menu"
-                        aria-expanded={albumDetailTitleMenuOpen}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setAlbumGridMenuOpen(false);
-                          setAlbumDetailTitleMenuOpen((o) => !o);
-                        }}
-                        style={{
-                          border: 'none',
-                          background: 'none',
-                          cursor: 'pointer',
-                          padding: 8,
-                          width: 44,
-                          height: 44,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <img alt="" src={A.dotsVertical} width={24} height={24} />
-                      </button>
-                      {albumDetailTitleMenuOpen && showTitleBarMore ? (
-                        <div className="zuper-album-title-menu" role="menu" aria-label="Album actions">
-                          <button
-                            type="button"
-                            role="menuitem"
-                            className="zuper-album-title-menu-item"
-                            onClick={handleTitleShare}
-                          >
-                            Share album
-                          </button>
-                          <button
-                            type="button"
-                            role="menuitem"
-                            className="zuper-album-title-menu-item"
-                            onClick={handleTitleCopyLink}
-                          >
-                            Copy link
-                          </button>
-                          {isAdmin ? (
+                    {/* Share album — direct action */}
+                    <button
+                      type="button"
+                      aria-label="Share album"
+                      onClick={handleTitleShare}
+                      style={{
+                        border: 'none',
+                        background: 'none',
+                        cursor: 'pointer',
+                        padding: 8,
+                        width: 40,
+                        height: 44,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <svg width={22} height={22} viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <path
+                          d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98M21 5a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM9 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM21 19a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+                          stroke={T.ink.normal}
+                          strokeWidth={1.8}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
+
+                    {/* Copy link — direct action */}
+                    <button
+                      type="button"
+                      aria-label="Copy link"
+                      onClick={handleTitleCopyLink}
+                      style={{
+                        border: 'none',
+                        background: 'none',
+                        cursor: 'pointer',
+                        padding: 8,
+                        width: 40,
+                        height: 44,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <svg width={22} height={22} viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <path
+                          d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"
+                          stroke={T.ink.normal}
+                          strokeWidth={1.8}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
+                          stroke={T.ink.normal}
+                          strokeWidth={1.8}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
+
+                    {/* Admin: Manage Shares via kebab */}
+                    {isAdmin ? (
+                      <div style={{ position: 'relative', width: 40, flexShrink: 0 }}>
+                        <button
+                          type="button"
+                          aria-label="More actions"
+                          aria-haspopup="menu"
+                          aria-expanded={albumDetailTitleMenuOpen}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setAlbumDetailTitleMenuOpen((o) => !o);
+                          }}
+                          style={{
+                            border: 'none',
+                            background: 'none',
+                            cursor: 'pointer',
+                            padding: 8,
+                            width: 40,
+                            height: 44,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <img alt="" src={A.dotsVertical} width={22} height={22} />
+                        </button>
+                        {albumDetailTitleMenuOpen && showTitleBarMore ? (
+                          <div className="zuper-album-title-menu" role="menu" aria-label="Album actions">
                             <button
                               type="button"
                               role="menuitem"
@@ -1026,10 +1068,10 @@ export function JobGalleryScreen() {
                             >
                               Manage Shares
                             </button>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
                 <div style={{ height: 1, width: '100%', backgroundColor: T.cloud.dark }} />
@@ -1126,151 +1168,16 @@ export function JobGalleryScreen() {
                   </div>
                   ) : null}
 
-                  {/* All Photos | Albums — segmented control */}
-                  {!albumDetailId ? (
-                    <div
-                      className="zuper-segment"
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'row',
-                        backgroundColor: T.cloud.dark,
-                        borderRadius: 10,
-                        padding: 4,
-                        gap: 4,
-                        marginBottom: 12,
-                        border: 'none',
-                        outline: 'none',
-                      }}
-                    >
-                      <button
-                        type="button"
-                        className="zuper-segment-pill"
-                        onClick={() => {
-                          setSegment('all');
-                          exitSelection();
-                        }}
-                        style={{
-                          flex: 1,
-                          border: 'none',
-                          borderRadius: 8,
-                          padding: '8px 12px',
-                          fontFamily: font,
-                          fontSize: 14,
-                          fontWeight: segment === 'all' ? 600 : 500,
-                          color: segment === 'all' ? T.ink.normal : T.ink.light,
-                          backgroundColor: segment === 'all' ? T.white : 'transparent',
-                          cursor: 'pointer',
-                          boxShadow: segment === 'all' ? '0 1px 3px rgba(37, 42, 49, 0.08)' : 'none',
-                        }}
-                      >
-                        All Photos
-                      </button>
-                      <button
-                        type="button"
-                        className="zuper-segment-pill"
-                        onClick={() => {
-                          setSegment('albums');
-                          exitSelection();
-                        }}
-                        style={{
-                          flex: 1,
-                          border: 'none',
-                          borderRadius: 8,
-                          padding: '8px 12px',
-                          fontFamily: font,
-                          fontSize: 14,
-                          fontWeight: segment === 'albums' ? 600 : 500,
-                          color: segment === 'albums' ? T.ink.normal : T.ink.light,
-                          backgroundColor: segment === 'albums' ? T.white : 'transparent',
-                          cursor: 'pointer',
-                          boxShadow: segment === 'albums' ? '0 1px 3px rgba(37, 42, 49, 0.08)' : 'none',
-                        }}
-                      >
-                        Albums
-                      </button>
-                    </div>
-                  ) : null}
-
-                  {/* Filters — All Photos only */}
-                  {!albumDetailId && segment === 'all' ? (
-                    <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                      <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', gap: 8, overflowX: 'auto' }} className="zuper-hide-scrollbar">
-                        {FILTERS.map((f) => (
-                          <button
-                            key={f.label}
-                            type="button"
-                            style={{
-                              display: 'flex',
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              gap: 4,
-                              paddingLeft: 12,
-                              paddingRight: 12,
-                              paddingTop: 6,
-                              paddingBottom: 6,
-                              borderRadius: f.wide ? 23 : 24,
-                              border: `0.998px solid ${T.cloud.dark}`,
-                              backgroundColor: T.surface.light2,
-                              boxShadow: '0px 1px 2px 0px rgba(0,0,0,0.05)',
-                              cursor: 'pointer',
-                              flexShrink: 0,
-                              ...TYPE.tabLabel,
-                              fontSize: 14,
-                              color: T.ink.normal,
-                              letterSpacing: 0.2,
-                            }}
-                          >
-                            {f.label}
-                            <img alt="" src={A.chevronDown} width={16} height={16} style={{ display: 'block' }} />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {/* Album detail: filters only when there is media to filter (empty album = no chips) */}
-                  {albumDetailId && activeAlbum && activeAlbum.photoIds.length > 0 ? (
-                    <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', gap: 8, overflowX: 'auto', marginBottom: 8 }} className="zuper-hide-scrollbar">
-                      {FILTERS.map((f) => (
-                        <button
-                          key={f.label}
-                          type="button"
-                          style={{
-                            display: 'flex',
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            gap: 4,
-                            paddingLeft: 12,
-                            paddingRight: 12,
-                            paddingTop: 6,
-                            paddingBottom: 6,
-                            borderRadius: 24,
-                            border: `0.998px solid ${T.cloud.dark}`,
-                            backgroundColor: T.surface.light2,
-                            boxShadow: '0px 1px 2px 0px rgba(0,0,0,0.05)',
-                            cursor: 'pointer',
-                            flexShrink: 0,
-                            fontSize: 14,
-                            fontWeight: 500,
-                            color: T.ink.normal,
-                          }}
-                        >
-                          {f.label}
-                          <img alt="" src={A.chevronDown} width={16} height={16} />
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
                 </div>
 
-                {/* Body — horizontal padding 16px for album grid; AlbumFolderGrid adds top padding only */}
+                {/* Body */}
                 <div
                   style={{
                     flex: 1,
                     backgroundColor: T.white,
                     paddingLeft: 16,
                     paddingRight: 16,
-                    paddingTop: segment === 'albums' ? 0 : 8,
+                    paddingTop: 8,
                     paddingBottom: 120,
                     width: '100%',
                     minHeight: 0,
@@ -1303,23 +1210,30 @@ export function JobGalleryScreen() {
                               <div className="zuper-album-detail-toolbar">
                                 <p
                                   style={{
-                                    ...TYPE.tabLabel,
-                                    color: T.ink.light,
+                                    ...TYPE.sectionDate,
+                                    color: T.ink.normal,
                                     margin: 0,
-                                    flex: '1 1 auto',
-                                    minWidth: 0,
+                                    fontWeight: 600,
                                   }}
                                 >
-                                  {photoCount} photo{photoCount === 1 ? '' : 's'}
+                                  {photoCount} {photoCount === 1 ? 'photo' : 'photos'}
                                 </p>
+                                {activeAlbum.shared ? (
+                                  <span
+                                    style={{
+                                      ...TYPE.tabLabel,
+                                      color: T.ink.light,
+                                      fontSize: 13,
+                                    }}
+                                  >
+                                    · Shared
+                                  </span>
+                                ) : null}
                               </div>
                               <div
                                 className="zuper-album-detail-grid"
                                 style={{
                                   gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
-                                  ...(gridCols === 1
-                                    ? { maxWidth: 260, marginLeft: 'auto', marginRight: 'auto' }
-                                    : {}),
                                 }}
                               >
                                 {activeAlbum.photoIds.map((pid) => {
@@ -1331,8 +1245,10 @@ export function JobGalleryScreen() {
                                       src={it.src}
                                       tag={it.tag}
                                       video={it.video}
-                                      selected={false}
-                                      selectionMode={false}
+                                      selected={albumSelectedIds.has(pid)}
+                                      selectionMode={albumSelecting}
+                                      onSelectInMode={() => toggleAlbumSelect(pid)}
+                                      onLongPressEnter={() => enterAlbumSelectionWith(pid)}
                                     />
                                   );
                                 })}
@@ -1342,31 +1258,130 @@ export function JobGalleryScreen() {
                         })()}
                       </>
                     )
-                  ) : segment === 'albums' ? (
-                    <AlbumFolderGrid
-                      albums={albums}
-                      resolveGalleryItem={resolveGalleryItem}
-                      onOpenAlbum={(id) => setAlbumDetailId(id)}
-                      onShare={(id) => {
-                        if (!albumHasPhotos(id, albums)) {
-                          showToast(EMPTY_ALBUM_ACTIONS_MSG);
-                          setAlbumMenuId(null);
-                          return;
-                        }
-                        setShareAlbumId(id);
-                        setAlbumMenuId(null);
-                      }}
-                      onCopyLink={copyAlbumLink}
-                      onManageShares={(id) => {
-                        setManageAlbumId(id);
-                        setAlbumMenuId(null);
-                      }}
-                      menuOpenId={albumMenuId}
-                      setMenuOpenId={setAlbumMenuId}
-                      showManageShares={isAdmin}
-                    />
                   ) : (
                     <>
+                      {/* Albums — horizontal carousel of folder cards */}
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                          <p style={{ ...TYPE.sectionDate, margin: 0, color: T.ink.normal }}>Albums</p>
+                        </div>
+                        <div
+                          className="zuper-hide-scrollbar"
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'row',
+                            gap: 12,
+                            overflowX: 'auto',
+                            paddingBottom: 4,
+                            marginLeft: -16,
+                            marginRight: -16,
+                            paddingLeft: 16,
+                            paddingRight: 16,
+                          }}
+                        >
+                          {albums.map((a) => {
+                            const count = a.photoIds.length;
+                            const shared = !!a.shared;
+                            const empty = count === 0;
+                            return (
+                              <button
+                                key={a.id}
+                                type="button"
+                                className="zuper-folder-btn"
+                                aria-label={`${a.name}, ${count} ${count === 1 ? 'item' : 'items'}${shared ? ', shared' : ''}`}
+                                onClick={() => setAlbumDetailId(a.id)}
+                                style={{
+                                  flexShrink: 0,
+                                  width: 94,
+                                  border: 'none',
+                                  background: 'transparent',
+                                  padding: 0,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  alignItems: 'center',
+                                  gap: 0,
+                                }}
+                              >
+                                <div style={{ marginTop: 8 }}>
+                                  <GlassyFolderIcon empty={empty} size={82} shared={shared} />
+                                </div>
+                                <span
+                                  style={{
+                                    fontFamily: font,
+                                    fontSize: 12,
+                                    fontWeight: 600,
+                                    color: T.ink.normal,
+                                    lineHeight: 1.3,
+                                    textAlign: 'center',
+                                    width: '100%',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    display: 'block',
+                                    marginTop: 8,
+                                  }}
+                                >
+                                  {a.name}
+                                </span>
+                                <span
+                                  style={{
+                                    fontFamily: font,
+                                    fontSize: 11,
+                                    fontWeight: 500,
+                                    color: T.ink.light,
+                                    lineHeight: 1.2,
+                                    marginTop: 2,
+                                  }}
+                                >
+                                  {count} {count === 1 ? 'Item' : 'Items'}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Filters — image gallery only (not albums) */}
+                      <div
+                        role="group"
+                        aria-label="Filter photos"
+                        style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'row', flexWrap: 'nowrap', gap: 8, overflowX: 'auto' }} className="zuper-hide-scrollbar">
+                          {FILTERS.map((f) => (
+                            <button
+                              key={f.label}
+                              type="button"
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 4,
+                                paddingLeft: 12,
+                                paddingRight: 12,
+                                paddingTop: 6,
+                                paddingBottom: 6,
+                                borderRadius: f.wide ? 23 : 24,
+                                border: `0.998px solid ${T.cloud.dark}`,
+                                backgroundColor: T.surface.light2,
+                                boxShadow: '0px 1px 2px 0px rgba(0,0,0,0.05)',
+                                cursor: 'pointer',
+                                flexShrink: 0,
+                                ...TYPE.tabLabel,
+                                fontSize: 14,
+                                color: T.ink.normal,
+                                letterSpacing: 0.2,
+                              }}
+                            >
+                              {f.label}
+                              <img alt="" src={A.chevronDown} width={16} height={16} style={{ display: 'block' }} />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Photos by date */}
                       {[...groupedAllPhotos.entries()].map(([section, items]) => (
                         <div key={section}>
                           <p style={{ ...TYPE.sectionDate, margin: '0 0 16px 0', color: T.ink.normal }}>
@@ -1436,7 +1451,7 @@ export function JobGalleryScreen() {
             ) : null}
 
             {/* FAB — camera / library when not in share and not album list-only weird */}
-            {!shareAlbumId && !pickerOpen && segment === 'all' && !albumDetailId ? (
+            {!shareAlbumId && !pickerOpen && !albumDetailId ? (
               <div
                 style={{
                   position: 'absolute',
@@ -1553,6 +1568,169 @@ export function JobGalleryScreen() {
                   >
                     Add to Album
                   </button>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Album detail bulk action bar — Remove from Album */}
+            {albumSelecting && albumSelectedIds.size > 0 && albumDetailId ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: 56,
+                  left: 16,
+                  right: 16,
+                  zIndex: 45,
+                  backgroundColor: T.ink.normal,
+                  borderRadius: 14,
+                  padding: '12px 16px',
+                  display: 'flex',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  boxShadow: '0 8px 24px rgba(37, 42, 49, 0.18)',
+                }}
+              >
+                <span style={{ color: T.white, fontSize: 14, fontWeight: 600 }}>{albumSelectedIds.size} selected</span>
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <button type="button" onClick={exitAlbumSelection} style={{ border: 'none', background: 'transparent', color: T.white, fontSize: 14, cursor: 'pointer', opacity: 0.9 }}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAlbumRemoveConfirmOpen(true)}
+                    style={{
+                      border: 'none',
+                      background: '#E5484D',
+                      color: T.white,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      padding: '8px 14px',
+                      borderRadius: 10,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Confirmation dialog — Remove from Album */}
+            {albumRemoveConfirmOpen ? (
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="remove-album-title"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  zIndex: 200,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: 'rgba(37, 42, 49, 0.45)',
+                }}
+                onClick={() => setAlbumRemoveConfirmOpen(false)}
+              >
+                <div
+                  style={{
+                    background: T.white,
+                    borderRadius: 16,
+                    padding: '24px 20px 16px',
+                    width: 'min(320px, calc(100% - 48px))',
+                    boxShadow: '0 16px 48px rgba(37, 42, 49, 0.22)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 12,
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Warning icon */}
+                  <div
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: '50%',
+                      background: '#FEE4E2',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <svg width={24} height={24} viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <path
+                        d="M12 9v4m0 4h.01M10.615 3.892 2.39 18.098c-.456.788-.684 1.182-.653 1.506a1 1 0 0 0 .437.724c.27.172.724.172 1.632.172h16.388c.908 0 1.362 0 1.632-.172a1 1 0 0 0 .437-.724c.031-.324-.197-.718-.653-1.506L13.385 3.892c-.454-.785-.681-1.178-.978-1.31a1 1 0 0 0-.814 0c-.297.132-.524.525-.978 1.31Z"
+                        stroke="#D92D20"
+                        strokeWidth={2}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </div>
+
+                  <p
+                    id="remove-album-title"
+                    style={{
+                      margin: 0,
+                      fontSize: 16,
+                      fontWeight: 600,
+                      color: T.ink.normal,
+                      textAlign: 'center',
+                    }}
+                  >
+                    Remove from Album
+                  </p>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 14,
+                      color: T.ink.light,
+                      textAlign: 'center',
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    Are you sure you want to remove the selected {albumSelectedIds.size === 1 ? 'item' : `${albumSelectedIds.size} items`} from this album?
+                  </p>
+
+                  <div style={{ display: 'flex', gap: 8, width: '100%', marginTop: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => setAlbumRemoveConfirmOpen(false)}
+                      style={{
+                        flex: 1,
+                        border: 'none',
+                        background: '#F2F4F7',
+                        color: T.ink.normal,
+                        fontSize: 14,
+                        fontWeight: 600,
+                        padding: '10px 0',
+                        borderRadius: 10,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmRemoveFromAlbum}
+                      style={{
+                        flex: 1,
+                        border: 'none',
+                        background: '#D92D20',
+                        color: T.white,
+                        fontSize: 14,
+                        fontWeight: 600,
+                        padding: '10px 0',
+                        borderRadius: 10,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : null}

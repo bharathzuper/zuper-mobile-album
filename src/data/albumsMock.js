@@ -31,7 +31,7 @@ export const GALLERY_ITEMS = [
 export function createInitialAlbums() {
   return [
     { id: 'album-adjuster', name: 'Adjuster', photoIds: [], shared: false },
-    { id: 'album-build', name: 'Build', photoIds: ['g28-3', 'g28-4'], shared: false },
+    { id: 'album-build', name: 'Build', photoIds: ['g28-3', 'g28-4'], shared: true },
     { id: 'album-completion', name: 'Completion Photo', photoIds: ['g27-0'], shared: true },
     { id: 'album-crew', name: 'Crew', photoIds: [], shared: false },
     { id: 'album-homeowner', name: 'Homeowner', photoIds: ['g28-0', 'g28-1'], shared: false },
